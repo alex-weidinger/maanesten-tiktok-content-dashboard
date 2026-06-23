@@ -72,16 +72,41 @@ async function exchangeToken() {
     process.exit(1);
   }
 
-  console.log("\n✓ Success! Add these to your environment variables:\n");
-  console.log(`  TIKTOK_ACCESS_TOKEN=${json.data.access_token}`);
-  const ids = json.data.advertiser_ids ?? [];
-  if (ids.length === 1) {
-    console.log(`  TIKTOK_ADVERTISER_ID=${ids[0]}`);
-  } else if (ids.length > 1) {
-    console.log(`  TIKTOK_ADVERTISER_ID=${ids[0]}   # pick the right one:`);
-    ids.forEach((id) => console.log(`      • ${id}`));
+  const token = json.data.access_token;
+  console.log("\n✓ Success! Add this to your environment variables:\n");
+  console.log(`  TIKTOK_ACCESS_TOKEN=${token}`);
+
+  // Look up the names of the ad accounts this token can read, so you can pick
+  // Maanesten's out of several accounts on the same login.
+  let accounts: { advertiser_id: string; advertiser_name: string }[] = [];
+  try {
+    const r = await fetch(
+      "https://business-api.tiktok.com/open_api/v1.3/oauth2/advertiser/get/" +
+        `?access_token=${encodeURIComponent(token!)}` +
+        `&secret=${encodeURIComponent(secret!)}` +
+        `&app_id=${encodeURIComponent(appId!)}`,
+    );
+    const j = (await r.json()) as {
+      code: number;
+      data?: { list?: { advertiser_id: string; advertiser_name: string }[] };
+    };
+    if (j.code === 0 && j.data?.list) accounts = j.data.list;
+  } catch {
+    /* fall back to bare IDs below */
+  }
+
+  console.log("\n  Pick Maanesten's account below and set TIKTOK_ADVERTISER_ID to its ID:\n");
+  if (accounts.length) {
+    for (const a of accounts) {
+      console.log(`      ${a.advertiser_id}   ${a.advertiser_name}`);
+    }
   } else {
-    console.log("  TIKTOK_ADVERTISER_ID=   # no advertiser IDs returned — check app permissions");
+    const ids = json.data.advertiser_ids ?? [];
+    if (ids.length) ids.forEach((id) => console.log(`      ${id}`));
+    else
+      console.log(
+        "      (no accounts returned — check that your login can see Maanesten's ad account)",
+      );
   }
   console.log("");
 }
