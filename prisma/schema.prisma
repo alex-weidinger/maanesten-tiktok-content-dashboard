@@ -1,0 +1,74 @@
+// Prisma schema for the TikTok content performance dashboard.
+// Run `npx prisma migrate dev` after setting DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One row per ad (creative). Status fields drive the live/paused badges.
+model Ad {
+  id              String          @id // TikTok ad_id
+  name            String
+  campaignId      String?
+  campaignName    String?
+  adGroupId       String?
+  adGroupName     String?
+  operationStatus String? // ENABLE | DISABLE  (what the user set)
+  secondaryStatus String? // AD_STATUS_DELIVERY_OK, AD_STATUS_DISABLE, ... (delivery state)
+  thumbnailUrl    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  metrics         AdDailyMetric[]
+}
+
+/// One row per ad per day. The dashboard aggregates these over a date range.
+model AdDailyMetric {
+  id              String   @id @default(cuid())
+  ad              Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  adId            String
+  date            DateTime @db.Date
+
+  // Spend & delivery
+  impressions     Int      @default(0)
+  clicks          Int      @default(0)
+  spend           Float    @default(0)
+
+  // Conversions / revenue
+  conversions     Float    @default(0)
+  conversionValue Float    @default(0) // revenue, used for ROAS
+
+  // Video funnel (for hook rate / retention)
+  videoViews      Int      @default(0) // video_play_actions (started plays)
+  video2s         Int      @default(0) // video_watched_2s
+  video6s         Int      @default(0) // video_watched_6s
+  videoP25        Int      @default(0)
+  videoP50        Int      @default(0)
+  videoP75        Int      @default(0)
+  videoP100       Int      @default(0)
+
+  // Engagement
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+  shares          Int      @default(0)
+  follows         Int      @default(0)
+  profileVisits   Int      @default(0)
+
+  @@unique([adId, date])
+  @@index([date])
+}
+
+/// Audit trail of daily sync runs (shown in the dashboard footer).
+model SyncLog {
+  id       String   @id @default(cuid())
+  ranAt    DateTime @default(now())
+  status   String // ok | error | skipped
+  source   String // tiktok | mock
+  message  String?
+  adCount  Int      @default(0)
+  rowCount Int      @default(0)
+}
