@@ -29,12 +29,13 @@ equivalent period.
 ## How it works
 
 ```
-TikTok Marketing API ──(daily cron)──▶ /api/sync ──▶ Postgres ──▶ Dashboard (Next.js)
+TikTok Marketing API ──(daily, Coolify Scheduled Task)──▶ sync ──▶ Postgres ──▶ Dashboard (Next.js)
 ```
 
 - **`src/lib/tiktok/client.ts`** pulls ad metadata + daily reporting metrics.
-- **`/api/sync`** runs once a day (Vercel Cron), writing a rolling 35-day window
-  into Postgres. It is protected by `CRON_SECRET`.
+- A **daily Coolify Scheduled Task** runs `npm run sync`, writing a rolling
+  35-day window into Postgres. (You can also trigger it over HTTP at `/api/sync`,
+  protected by `CRON_SECRET`.)
 - The dashboard reads aggregated data for the selected period from Postgres.
 - **No credentials yet?** The app ships with realistic **mock data** so the UI
   works out of the box. It automatically switches to live data once you add
@@ -114,21 +115,65 @@ Open <http://localhost:3000> — it now reads from the database.
 
 ---
 
-## 3. Deploy to Vercel (with daily auto-update)
+## 3. Deploy with Coolify (with daily auto-update)
 
-1. Push this repo to GitHub (see below), then **Import** it at
-   <https://vercel.com/new>.
-2. In **Project Settings → Environment Variables**, add:
+The app is a standard Dockerfile, so Coolify can build and run it directly. The
+Postgres database is a **separate Coolify resource** — there is no bundled
+database and no docker-compose.
+
+1. **Create the Postgres database** — in your Coolify project, add a new
+   **PostgreSQL** resource. Copy its connection string (internal URL).
+2. **Create the application** — add a new resource from your **Git repository**
+   (`maanesten-tiktok-content-dashboard`). Coolify auto-detects the `Dockerfile`.
+   Set the exposed port to **3000**.
+3. **Add environment variables** on the application:
+   `DATABASE_URL` (the Postgres URL from step 1), plus when ready:
    `TIKTOK_APP_ID`, `TIKTOK_APP_SECRET`, `TIKTOK_ACCESS_TOKEN`,
-   `TIKTOK_ADVERTISER_ID`, `DATABASE_URL`, `CRON_SECRET`
-   (generate the secret with `openssl rand -hex 32`).
-3. Deploy. Vercel reads [`vercel.json`](./vercel.json) and registers the daily
-   cron that calls `/api/sync` at **06:00 UTC**.
-   - Vercel automatically sends `Authorization: Bearer $CRON_SECRET` to the cron
-     route, so only the scheduled job can trigger a refresh.
-4. Share the resulting `*.vercel.app` URL (or a custom domain) with the client.
+   `TIKTOK_ADVERTISER_ID`, and `CRON_SECRET` (`openssl rand -hex 32`).
+4. **Deploy.** On boot the container creates the database tables automatically
+   (`prisma db push`).
+5. **Schedule the daily refresh** — add a **Scheduled Task** to the application:
+   - Command: `npm run sync`
+   - Frequency: `0 6 * * *` (every day at 06:00)
+6. Share the app's public URL with the client.
 
-**Manual refresh anytime:** `https://your-app.vercel.app/api/sync?secret=YOUR_CRON_SECRET`
+**Manual refresh anytime:** run the Scheduled Task on demand, or call
+`https://your-domain/api/sync?secret=YOUR_CRON_SECRET`.
+
+---
+
+## Local development with Docker
+
+Everything runs in containers — no Node or Postgres installed on your machine,
+no docker-compose.
+
+```bash
+# 1. A network so the app and database can talk
+docker network create ttdash
+
+# 2. A local Postgres
+docker run -d --name ttdash-db --network ttdash \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tiktok \
+  -p 5432:5432 postgres:16
+
+# 3. Build and run the dashboard
+docker build -t ttdash .
+docker run --rm --network ttdash -p 3000:3000 \
+  -e DATABASE_URL="postgresql://postgres:postgres@ttdash-db:5432/tiktok" \
+  ttdash
+```
+
+Open <http://localhost:3000>. To load sample data into the local database, run a
+one-off sync:
+
+```bash
+docker run --rm --network ttdash \
+  -e DATABASE_URL="postgresql://postgres:postgres@ttdash-db:5432/tiktok" \
+  ttdash npm run sync
+```
+
+> Prefer no database while previewing the UI? Run the app container **without**
+> `DATABASE_URL` and it serves sample data.
 
 ### Locking it down later (optional)
 
@@ -164,5 +209,6 @@ src/
     sync.ts             TikTok → Postgres upsert
     data.ts             Dashboard read layer (DB or mock)
 prisma/schema.prisma    Ad + daily-metric tables
-vercel.json             Daily cron schedule
+Dockerfile              Production image (Coolify + local)
+docker-entrypoint.sh    Runs prisma db push, then starts the app
 ```
