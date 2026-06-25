@@ -134,6 +134,7 @@ export function getMockAds(range: DateRange): AdRecord[] {
       adGroupName: ad.adGroupName,
       operationStatus: ad.operationStatus,
       secondaryStatus: ad.secondaryStatus,
+      tiktokItemId: null,
       thumbnailUrl: null,
       status: deriveStatus(ad.operationStatus, ad.secondaryStatus),
       daily: days.map((date) => buildDaily(ad, date)),

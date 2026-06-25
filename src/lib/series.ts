@@ -48,6 +48,7 @@ export function buildTimeSeries(ads: AdRecord[], range: DateRange): SeriesPoint[
 export interface AdRow {
   id: string;
   name: string;
+  tiktokItemId: string | null;
   advertiserName: string | null;
   campaignName: string | null;
   adGroupName: string | null;
@@ -76,6 +77,7 @@ export function buildAdRows(ads: AdRecord[]): AdRow[] {
     return {
       id: ad.id,
       name: ad.name,
+      tiktokItemId: ad.tiktokItemId,
       advertiserName: ad.advertiserName,
       campaignName: ad.campaignName,
       adGroupName: ad.adGroupName,

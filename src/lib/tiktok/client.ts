@@ -34,6 +34,7 @@ export interface TikTokAd {
   adGroupName: string | null;
   operationStatus: string | null;
   secondaryStatus: string | null;
+  tiktokItemId: string | null;
   thumbnailUrl: string | null;
   daily: DailyMetric[];
 }
@@ -124,6 +125,7 @@ interface AdListData {
     adgroup_name?: string;
     operation_status?: string;
     secondary_status?: string;
+    tiktok_item_id?: string;
   }>;
   page_info: { page: number; total_page: number };
 }
@@ -144,6 +146,7 @@ async function fetchAdMeta(accessToken: string, advertiserId: string) {
         "adgroup_name",
         "operation_status",
         "secondary_status",
+        "tiktok_item_id",
       ],
       page,
       page_size: 100,
@@ -159,6 +162,7 @@ async function fetchAdMeta(accessToken: string, advertiserId: string) {
         adGroupName: a.adgroup_name ?? null,
         operationStatus: a.operation_status ?? null,
         secondaryStatus: a.secondary_status ?? null,
+        tiktokItemId: a.tiktok_item_id ?? null,
         thumbnailUrl: null,
       });
     }
@@ -313,6 +317,7 @@ async function fetchAdsForAdvertiser(
         adGroupName: null,
         operationStatus: null,
         secondaryStatus: null,
+        tiktokItemId: null,
         thumbnailUrl: null,
         daily,
       });

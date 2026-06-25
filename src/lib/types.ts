@@ -35,6 +35,7 @@ export interface AdRecord {
   adGroupName: string | null;
   operationStatus: string | null;
   secondaryStatus: string | null;
+  tiktokItemId: string | null;
   thumbnailUrl: string | null;
   status: AdStatus;
   daily: DailyMetric[];

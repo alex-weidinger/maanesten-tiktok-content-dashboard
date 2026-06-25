@@ -35,7 +35,8 @@ export async function runSync(window?: DateRange): Promise<SyncResult> {
   let source: "tiktok" | "mock";
   let ads: Array<Pick<TikTokAd | AdRecord,
     | "id" | "name" | "advertiserId" | "advertiserName" | "campaignName"
-    | "adGroupName" | "operationStatus" | "secondaryStatus" | "thumbnailUrl" | "daily"> & {
+    | "adGroupName" | "operationStatus" | "secondaryStatus" | "tiktokItemId"
+    | "thumbnailUrl" | "daily"> & {
     campaignId?: string | null;
     adGroupId?: string | null;
   }>;
@@ -63,6 +64,7 @@ export async function runSync(window?: DateRange): Promise<SyncResult> {
             adGroupName: ad.adGroupName ?? null,
             operationStatus: ad.operationStatus ?? null,
             secondaryStatus: ad.secondaryStatus ?? null,
+            tiktokItemId: ad.tiktokItemId ?? null,
             thumbnailUrl: ad.thumbnailUrl ?? null,
           };
           return prisma.ad.upsert({

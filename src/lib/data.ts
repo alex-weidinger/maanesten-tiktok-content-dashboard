@@ -50,6 +50,7 @@ export async function getDashboardData(range: DateRange): Promise<DashboardData>
     adGroupName: ad.adGroupName,
     operationStatus: ad.operationStatus,
     secondaryStatus: ad.secondaryStatus,
+    tiktokItemId: ad.tiktokItemId,
     thumbnailUrl: ad.thumbnailUrl,
     status: deriveStatus(ad.operationStatus, ad.secondaryStatus),
     daily: ad.metrics.map(

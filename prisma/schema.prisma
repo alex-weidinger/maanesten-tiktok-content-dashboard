@@ -22,6 +22,7 @@ model Ad {
   adGroupName     String?
   operationStatus String? // ENABLE | DISABLE  (what the user set)
   secondaryStatus String? // AD_STATUS_DELIVERY_OK, AD_STATUS_DISABLE, ... (delivery state)
+  tiktokItemId    String? // Spark Ad source post id — used for cover + embed
   thumbnailUrl    String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt

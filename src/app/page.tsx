@@ -1,23 +1,15 @@
 import { Suspense } from "react";
 import { format } from "date-fns";
 import { getDashboardData } from "@/lib/data";
-import { rangeFromParams, previousRange, formatRangeLabel } from "@/lib/dates";
-import { aggregateAds, delta, HOOK_RATE_BASIS } from "@/lib/metrics";
+import { rangeFromParams, formatRangeLabel } from "@/lib/dates";
 import { buildTimeSeries, buildAdRows } from "@/lib/series";
 import { listAccounts } from "@/lib/accounts";
 import type { AdRecord } from "@/lib/types";
-import { MarketSelector } from "@/components/MarketSelector";
-import {
-  formatCurrency,
-  formatNumber,
-  formatPercent,
-  formatRoas,
-} from "@/lib/format";
 import { PeriodSelector } from "@/components/PeriodSelector";
+import { MarketSelector } from "@/components/MarketSelector";
 import { ShareButton } from "@/components/ShareButton";
-import { KpiCard } from "@/components/KpiCard";
+import { TopCreatives } from "@/components/TopCreatives";
 import { TrendChart } from "@/components/TrendChart";
-import { EngagementChart } from "@/components/EngagementChart";
 import { AdTable } from "@/components/AdTable";
 
 export const dynamic = "force-dynamic";
@@ -36,16 +28,12 @@ export default async function DashboardPage({
 }) {
   const params = await searchParams;
   const range = rangeFromParams(params);
-  const prevRange = previousRange(range);
   const selectedAccount = params.account ?? "all";
 
-  const [current, previous] = await Promise.all([
-    getDashboardData(range),
-    getDashboardData(prevRange),
-  ]);
+  const current = await getDashboardData(range);
 
   // Markets come from the full set so every option stays available when one is
-  // selected; metrics are computed on the filtered set.
+  // selected; everything else is computed on the filtered set.
   const accounts = listAccounts(current.ads);
   const filterByAccount = (list: AdRecord[]) =>
     selectedAccount === "all"
@@ -53,10 +41,6 @@ export default async function DashboardPage({
       : list.filter((a) => a.advertiserId === selectedAccount);
 
   const ads = filterByAccount(current.ads);
-  const prevAds = filterByAccount(previous.ads);
-
-  const totals = aggregateAds(ads);
-  const prevTotals = aggregateAds(prevAds);
   const series = buildTimeSeries(ads, range);
   const rows = buildAdRows(ads);
 
@@ -65,25 +49,6 @@ export default async function DashboardPage({
     selectedAccount === "all"
       ? "All markets"
       : accounts.find((a) => a.id === selectedAccount)?.name ?? "All markets";
-
-  const kpis = [
-    { label: "Spend", value: formatCurrency(totals.spend), delta: delta(totals.spend, prevTotals.spend), invert: true },
-    { label: "Revenue", value: formatCurrency(totals.conversionValue), delta: delta(totals.conversionValue, prevTotals.conversionValue) },
-    { label: "ROAS", value: formatRoas(totals.roas), delta: delta(totals.roas, prevTotals.roas) },
-    { label: "Conversions", value: formatNumber(totals.conversions), delta: delta(totals.conversions, prevTotals.conversions) },
-    { label: "Conversion rate", value: formatPercent(totals.conversionRate), delta: delta(totals.conversionRate, prevTotals.conversionRate), hint: "Conversions / clicks" },
-    { label: "CTR", value: formatPercent(totals.ctr), delta: delta(totals.ctr, prevTotals.ctr), hint: "Clicks / impressions" },
-    { label: "Hook rate", value: formatPercent(totals.hookRate), delta: delta(totals.hookRate, prevTotals.hookRate), hint: `${HOOK_RATE_BASIS === "video6s" ? "6-second" : "2-second"} video views / impressions` },
-    { label: "Engagement rate", value: formatPercent(totals.engagementRate), delta: delta(totals.engagementRate, prevTotals.engagementRate), hint: "(Likes + comments + shares) / impressions" },
-  ];
-
-  const engagement = [
-    { name: "Likes", value: totals.likes },
-    { name: "Comments", value: totals.comments },
-    { name: "Shares", value: totals.shares },
-    { name: "Follows", value: totals.follows },
-    { name: "Profile visits", value: totals.profileVisits },
-  ];
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
@@ -125,26 +90,19 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {/* KPI grid */}
-      <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {kpis.map((k) => (
-          <KpiCard key={k.label} {...k} />
-        ))}
+      {/* Top creatives (primary view) */}
+      <section className="mt-5">
+        <TopCreatives rows={rows} />
       </section>
 
-      {/* Charts */}
-      <section className="mt-5 grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <TrendChart data={series} />
-        </div>
-        <div className="lg:col-span-1">
-          <EngagementChart data={engagement} />
-        </div>
-      </section>
-
-      {/* Ad table */}
+      {/* Per-creative table */}
       <section className="mt-5">
         <AdTable rows={rows} />
+      </section>
+
+      {/* Supporting trend context */}
+      <section className="mt-5">
+        <TrendChart data={series} />
       </section>
 
       {/* Footer */}
