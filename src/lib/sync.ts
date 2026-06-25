@@ -14,8 +14,12 @@ export interface SyncResult {
   rowCount: number;
 }
 
-/** How many days back to refresh on each run (TikTok stats can be revised). */
-const SYNC_WINDOW_DAYS = 35;
+/**
+ * How many days back to refresh on each run. Needs to cover the longest preset
+ * (30 days / a month) PLUS its previous-period comparison — hence ~70 days.
+ * TikTok stats can also be revised for recent days, so re-pulling is intended.
+ */
+const SYNC_WINDOW_DAYS = 70;
 
 function defaultWindow(): DateRange {
   const end = new Date();

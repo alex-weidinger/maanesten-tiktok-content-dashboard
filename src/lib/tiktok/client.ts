@@ -44,11 +44,32 @@ interface TikTokResponse<T> {
   data: T;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Throttle: TikTok caps apps at ~10 requests/second (QPS). We space request
+// *starts* ~120ms apart (≈8/s) regardless of how many calls run concurrently.
+const MIN_INTERVAL_MS = 120;
+let throttleChain: Promise<void> = Promise.resolve();
+let lastStart = 0;
+
+function nextSlot(): Promise<void> {
+  const slot = throttleChain.then(async () => {
+    const wait = MIN_INTERVAL_MS - (Date.now() - lastStart);
+    if (wait > 0) await sleep(wait);
+    lastStart = Date.now();
+  });
+  throttleChain = slot.catch(() => {});
+  return slot;
+}
+
 async function ttGet<T>(
   accessToken: string,
   path: string,
   params: Record<string, unknown>,
+  attempt = 0,
 ): Promise<T> {
+  await nextSlot();
+
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, typeof v === "string" ? v : JSON.stringify(v));
@@ -58,6 +79,12 @@ async function ttGet<T>(
     cache: "no-store",
   });
   const json = (await res.json()) as TikTokResponse<T>;
+
+  // Back off and retry on QPS (40100) or transient server errors.
+  if ((json.code === 40100 || json.code === 50000) && attempt < 6) {
+    await sleep(1000 * (attempt + 1));
+    return ttGet<T>(accessToken, path, params, attempt + 1);
+  }
   if (json.code !== 0) {
     throw new Error(`TikTok API error ${json.code}: ${json.message}`);
   }
@@ -175,6 +202,24 @@ const num = (v: string | undefined) => {
   return isFinite(n) ? n : 0;
 };
 
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Split [start, end] into inclusive sub-ranges of at most `maxDays` each. */
+function dateChunks(startDate: string, endDate: string, maxDays: number): [string, string][] {
+  const chunks: [string, string][] = [];
+  const end = new Date(`${endDate}T00:00:00Z`);
+  let cur = new Date(`${startDate}T00:00:00Z`);
+  while (cur <= end) {
+    const chunkEnd = new Date(cur);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + (maxDays - 1));
+    const e = chunkEnd < end ? chunkEnd : end;
+    chunks.push([isoDay(cur), isoDay(e)]);
+    cur = new Date(e);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return chunks;
+}
+
 async function fetchReport(
   accessToken: string,
   advertiserId: string,
@@ -182,53 +227,58 @@ async function fetchReport(
   endDate: string,
 ): Promise<Map<string, DailyMetric[]>> {
   const byAd = new Map<string, DailyMetric[]>();
-  let page = 1;
-  let totalPage = 1;
-  do {
-    const data = await ttGet<ReportData>(accessToken, "/report/integrated/get/", {
-      advertiser_id: advertiserId,
-      report_type: "BASIC",
-      data_level: "AUCTION_AD",
-      dimensions: ["ad_id", "stat_time_day"],
-      metrics: REPORT_METRICS,
-      start_date: startDate,
-      end_date: endDate,
-      page,
-      page_size: 1000,
-    });
-    for (const row of data.list) {
-      const adId = row.dimensions.ad_id;
-      const date = row.dimensions.stat_time_day.slice(0, 10);
-      const m = row.metrics;
-      const spend = num(m.spend);
-      const roas = num(m.complete_payment_roas);
-      const point: DailyMetric = {
-        date,
-        impressions: num(m.impressions),
-        clicks: num(m.clicks),
-        spend,
-        conversions: num(m.conversion),
-        conversionValue: +(spend * roas).toFixed(2), // revenue = spend × ROAS
-        videoViews: num(m.video_play_actions),
-        video2s: num(m.video_watched_2s),
-        video6s: num(m.video_watched_6s),
-        videoP25: num(m.video_views_p25),
-        videoP50: num(m.video_views_p50),
-        videoP75: num(m.video_views_p75),
-        videoP100: num(m.video_views_p100),
-        likes: num(m.likes),
-        comments: num(m.comments),
-        shares: num(m.shares),
-        follows: num(m.follows),
-        profileVisits: num(m.profile_visits),
-      };
-      const arr = byAd.get(adId) ?? [];
-      arr.push(point);
-      byAd.set(adId, arr);
-    }
-    totalPage = data.page_info?.total_page ?? 1;
-    page += 1;
-  } while (page <= totalPage);
+
+  // TikTok caps daily reports at a 30-day span per request.
+  for (const [chunkStart, chunkEnd] of dateChunks(startDate, endDate, 30)) {
+    let page = 1;
+    let totalPage = 1;
+    do {
+      const data = await ttGet<ReportData>(accessToken, "/report/integrated/get/", {
+        advertiser_id: advertiserId,
+        report_type: "BASIC",
+        data_level: "AUCTION_AD",
+        dimensions: ["ad_id", "stat_time_day"],
+        metrics: REPORT_METRICS,
+        start_date: chunkStart,
+        end_date: chunkEnd,
+        page,
+        page_size: 1000,
+      });
+      for (const row of data.list) {
+        const adId = row.dimensions.ad_id;
+        const date = row.dimensions.stat_time_day.slice(0, 10);
+        const m = row.metrics;
+        const spend = num(m.spend);
+        const roas = num(m.complete_payment_roas);
+        const point: DailyMetric = {
+          date,
+          impressions: num(m.impressions),
+          clicks: num(m.clicks),
+          spend,
+          conversions: num(m.conversion),
+          conversionValue: +(spend * roas).toFixed(2), // revenue = spend × ROAS
+          videoViews: num(m.video_play_actions),
+          video2s: num(m.video_watched_2s),
+          video6s: num(m.video_watched_6s),
+          videoP25: num(m.video_views_p25),
+          videoP50: num(m.video_views_p50),
+          videoP75: num(m.video_views_p75),
+          videoP100: num(m.video_views_p100),
+          likes: num(m.likes),
+          comments: num(m.comments),
+          shares: num(m.shares),
+          follows: num(m.follows),
+          profileVisits: num(m.profile_visits),
+        };
+        const arr = byAd.get(adId) ?? [];
+        arr.push(point);
+        byAd.set(adId, arr);
+      }
+      totalPage = data.page_info?.total_page ?? 1;
+      page += 1;
+    } while (page <= totalPage);
+  }
+
   return byAd;
 }
 
