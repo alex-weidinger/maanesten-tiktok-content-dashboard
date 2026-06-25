@@ -30,8 +30,8 @@ export async function runSync(window?: DateRange): Promise<SyncResult> {
 
   let source: "tiktok" | "mock";
   let ads: Array<Pick<TikTokAd | AdRecord,
-    | "id" | "name" | "campaignName" | "adGroupName"
-    | "operationStatus" | "secondaryStatus" | "thumbnailUrl" | "daily"> & {
+    | "id" | "name" | "advertiserId" | "advertiserName" | "campaignName"
+    | "adGroupName" | "operationStatus" | "secondaryStatus" | "thumbnailUrl" | "daily"> & {
     campaignId?: string | null;
     adGroupId?: string | null;
   }>;
@@ -52,6 +52,8 @@ export async function runSync(window?: DateRange): Promise<SyncResult> {
         create: {
           id: ad.id,
           name: ad.name,
+          advertiserId: ad.advertiserId ?? null,
+          advertiserName: ad.advertiserName ?? null,
           campaignId: ad.campaignId ?? null,
           campaignName: ad.campaignName ?? null,
           adGroupId: ad.adGroupId ?? null,
@@ -62,6 +64,8 @@ export async function runSync(window?: DateRange): Promise<SyncResult> {
         },
         update: {
           name: ad.name,
+          advertiserId: ad.advertiserId ?? null,
+          advertiserName: ad.advertiserName ?? null,
           campaignId: ad.campaignId ?? null,
           campaignName: ad.campaignName ?? null,
           adGroupId: ad.adGroupId ?? null,

@@ -29,6 +29,8 @@ export type AdStatus = "live" | "paused" | "disabled";
 export interface AdRecord {
   id: string;
   name: string;
+  advertiserId: string | null;
+  advertiserName: string | null; // market label, e.g. "Maanesten DK"
   campaignName: string | null;
   adGroupName: string | null;
   operationStatus: string | null;

@@ -161,7 +161,9 @@ export function AdTable({ rows }: { rows: AdRow[] }) {
                 <td className="px-3 py-3 max-w-[260px]">
                   <div className="font-medium truncate">{r.name}</div>
                   <div className="text-xs text-muted truncate">
-                    {[r.campaignName, r.adGroupName].filter(Boolean).join(" · ") || "—"}
+                    {[r.advertiserName, r.campaignName, r.adGroupName]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
                   </div>
                 </td>
                 <td className="px-3 py-3">

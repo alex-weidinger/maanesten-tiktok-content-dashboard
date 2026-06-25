@@ -4,6 +4,9 @@ import { getDashboardData } from "@/lib/data";
 import { rangeFromParams, previousRange, formatRangeLabel } from "@/lib/dates";
 import { aggregateAds, delta, HOOK_RATE_BASIS } from "@/lib/metrics";
 import { buildTimeSeries, buildAdRows } from "@/lib/series";
+import { listAccounts } from "@/lib/accounts";
+import type { AdRecord } from "@/lib/types";
+import { MarketSelector } from "@/components/MarketSelector";
 import {
   formatCurrency,
   formatNumber,
@@ -19,7 +22,12 @@ import { AdTable } from "@/components/AdTable";
 
 export const dynamic = "force-dynamic";
 
-type SearchParams = Promise<{ preset?: string; start?: string; end?: string }>;
+type SearchParams = Promise<{
+  preset?: string;
+  start?: string;
+  end?: string;
+  account?: string;
+}>;
 
 export default async function DashboardPage({
   searchParams,
@@ -29,18 +37,34 @@ export default async function DashboardPage({
   const params = await searchParams;
   const range = rangeFromParams(params);
   const prevRange = previousRange(range);
+  const selectedAccount = params.account ?? "all";
 
   const [current, previous] = await Promise.all([
     getDashboardData(range),
     getDashboardData(prevRange),
   ]);
 
-  const totals = aggregateAds(current.ads);
-  const prevTotals = aggregateAds(previous.ads);
-  const series = buildTimeSeries(current.ads, range);
-  const rows = buildAdRows(current.ads);
+  // Markets come from the full set so every option stays available when one is
+  // selected; metrics are computed on the filtered set.
+  const accounts = listAccounts(current.ads);
+  const filterByAccount = (list: AdRecord[]) =>
+    selectedAccount === "all"
+      ? list
+      : list.filter((a) => a.advertiserId === selectedAccount);
 
-  const liveCount = current.ads.filter((a) => a.status === "live").length;
+  const ads = filterByAccount(current.ads);
+  const prevAds = filterByAccount(previous.ads);
+
+  const totals = aggregateAds(ads);
+  const prevTotals = aggregateAds(prevAds);
+  const series = buildTimeSeries(ads, range);
+  const rows = buildAdRows(ads);
+
+  const liveCount = ads.filter((a) => a.status === "live").length;
+  const selectedMarketName =
+    selectedAccount === "all"
+      ? "All markets"
+      : accounts.find((a) => a.id === selectedAccount)?.name ?? "All markets";
 
   const kpis = [
     { label: "Spend", value: formatCurrency(totals.spend), delta: delta(totals.spend, prevTotals.spend), invert: true },
@@ -73,8 +97,9 @@ export default async function DashboardPage({
             </h1>
           </div>
           <p className="mt-1 text-sm text-muted">
+            <span className="text-foreground font-medium">{selectedMarketName}</span> ·{" "}
             {formatRangeLabel(range)} ·{" "}
-            <span className="text-foreground font-medium">{current.ads.length}</span> ads ·{" "}
+            <span className="text-foreground font-medium">{ads.length}</span> ads ·{" "}
             <span className="text-positive font-medium">{liveCount} live</span>
           </p>
         </div>
@@ -83,10 +108,13 @@ export default async function DashboardPage({
         </div>
       </header>
 
-      {/* Period selector */}
-      <div className="mt-5">
+      {/* Controls: period + market */}
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         <Suspense fallback={<div className="h-9" />}>
           <PeriodSelector range={range} />
+        </Suspense>
+        <Suspense fallback={null}>
+          <MarketSelector accounts={accounts} selected={selectedAccount} />
         </Suspense>
       </div>
 

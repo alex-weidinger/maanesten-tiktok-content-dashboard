@@ -2,6 +2,7 @@
 // TikTok developer app is live. Same seed → same numbers on every reload.
 import { listDays, type DateRange } from "../dates";
 import { deriveStatus } from "../metrics";
+import { MAANESTEN_MARKETS } from "../accounts";
 import type { AdRecord, DailyMetric } from "../types";
 
 // Tiny deterministic PRNG (mulberry32) seeded from a string.
@@ -121,15 +122,21 @@ function buildDaily(ad: MockAdDef, date: string): DailyMetric {
 /** Full mock dataset for a date range, in the same shape the DB layer returns. */
 export function getMockAds(range: DateRange): AdRecord[] {
   const days = listDays(range);
-  return MOCK_ADS.map((ad) => ({
-    id: ad.id,
-    name: ad.name,
-    campaignName: ad.campaignName,
-    adGroupName: ad.adGroupName,
-    operationStatus: ad.operationStatus,
-    secondaryStatus: ad.secondaryStatus,
-    thumbnailUrl: null,
-    status: deriveStatus(ad.operationStatus, ad.secondaryStatus),
-    daily: days.map((date) => buildDaily(ad, date)),
-  }));
+  return MOCK_ADS.map((ad, i) => {
+    // Spread the sample ads evenly across Maanesten's markets.
+    const market = MAANESTEN_MARKETS[i % MAANESTEN_MARKETS.length];
+    return {
+      id: ad.id,
+      name: ad.name,
+      advertiserId: market.id,
+      advertiserName: market.name,
+      campaignName: ad.campaignName,
+      adGroupName: ad.adGroupName,
+      operationStatus: ad.operationStatus,
+      secondaryStatus: ad.secondaryStatus,
+      thumbnailUrl: null,
+      status: deriveStatus(ad.operationStatus, ad.secondaryStatus),
+      daily: days.map((date) => buildDaily(ad, date)),
+    };
+  });
 }

@@ -48,6 +48,7 @@ export function buildTimeSeries(ads: AdRecord[], range: DateRange): SeriesPoint[
 export interface AdRow {
   id: string;
   name: string;
+  advertiserName: string | null;
   campaignName: string | null;
   adGroupName: string | null;
   status: AdStatus;
@@ -75,6 +76,7 @@ export function buildAdRows(ads: AdRecord[]): AdRow[] {
     return {
       id: ad.id,
       name: ad.name,
+      advertiserName: ad.advertiserName,
       campaignName: ad.campaignName,
       adGroupName: ad.adGroupName,
       status: ad.status,

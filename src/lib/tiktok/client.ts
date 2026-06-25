@@ -1,24 +1,33 @@
 // TikTok Marketing API client. Pulls ad metadata (status) + daily reporting
-// metrics for a date range. See https://business-api.tiktok.com/portal/docs
+// metrics across one or more advertiser (ad account) IDs.
+// See https://business-api.tiktok.com/portal/docs
+import { labelForAdvertiser } from "../accounts";
 import type { DailyMetric } from "../types";
 
 const BASE = "https://business-api.tiktok.com/open_api/v1.3";
 
 export interface TikTokConfig {
   accessToken: string;
-  advertiserId: string;
+  advertiserIds: string[];
 }
 
+/** Reads access token + advertiser IDs from env. Returns null if not configured. */
 export function getTikTokConfig(): TikTokConfig | null {
   const accessToken = process.env.TIKTOK_ACCESS_TOKEN;
-  const advertiserId = process.env.TIKTOK_ADVERTISER_ID;
-  if (!accessToken || !advertiserId) return null;
-  return { accessToken, advertiserId };
+  // Comma-separated TIKTOK_ADVERTISER_IDS, or single TIKTOK_ADVERTISER_ID.
+  const ids = (process.env.TIKTOK_ADVERTISER_IDS || process.env.TIKTOK_ADVERTISER_ID || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!accessToken || ids.length === 0) return null;
+  return { accessToken, advertiserIds: ids };
 }
 
 export interface TikTokAd {
   id: string;
   name: string;
+  advertiserId: string | null;
+  advertiserName: string | null;
   campaignId: string | null;
   campaignName: string | null;
   adGroupId: string | null;
@@ -36,7 +45,7 @@ interface TikTokResponse<T> {
 }
 
 async function ttGet<T>(
-  cfg: TikTokConfig,
+  accessToken: string,
   path: string,
   params: Record<string, unknown>,
 ): Promise<T> {
@@ -45,7 +54,7 @@ async function ttGet<T>(
     url.searchParams.set(k, typeof v === "string" ? v : JSON.stringify(v));
   }
   const res = await fetch(url.toString(), {
-    headers: { "Access-Token": cfg.accessToken },
+    headers: { "Access-Token": accessToken },
     cache: "no-store",
   });
   const json = (await res.json()) as TikTokResponse<T>;
@@ -55,7 +64,29 @@ async function ttGet<T>(
   return json.data;
 }
 
-// ── Ad metadata (names + status) ────────────────────────────────────────────
+// ── Advertiser (account) names ───────────────────────────────────────────────
+interface AdvertiserInfoData {
+  list: Array<{ advertiser_id: string; name: string }>;
+}
+
+async function fetchAdvertiserNames(
+  accessToken: string,
+  advertiserIds: string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  try {
+    const data = await ttGet<AdvertiserInfoData>(accessToken, "/advertiser/info/", {
+      advertiser_ids: advertiserIds,
+      fields: ["advertiser_id", "name"],
+    });
+    for (const a of data.list) names.set(a.advertiser_id, a.name);
+  } catch {
+    /* fall back to known labels below */
+  }
+  return names;
+}
+
+// ── Ad metadata (names + status) ─────────────────────────────────────────────
 interface AdListData {
   list: Array<{
     ad_id: string;
@@ -71,13 +102,13 @@ interface AdListData {
   page_info: { page: number; total_page: number };
 }
 
-async function fetchAdMeta(cfg: TikTokConfig) {
-  const meta = new Map<string, Omit<TikTokAd, "daily">>();
+async function fetchAdMeta(accessToken: string, advertiserId: string) {
+  const meta = new Map<string, Omit<TikTokAd, "daily" | "advertiserName">>();
   let page = 1;
   let totalPage = 1;
   do {
-    const data = await ttGet<AdListData>(cfg, "/ad/get/", {
-      advertiser_id: cfg.advertiserId,
+    const data = await ttGet<AdListData>(accessToken, "/ad/get/", {
+      advertiser_id: advertiserId,
       fields: [
         "ad_id",
         "ad_name",
@@ -96,6 +127,7 @@ async function fetchAdMeta(cfg: TikTokConfig) {
       meta.set(a.ad_id, {
         id: a.ad_id,
         name: a.ad_name,
+        advertiserId,
         campaignId: a.campaign_id ?? null,
         campaignName: a.campaign_name ?? null,
         adGroupId: a.adgroup_id ?? null,
@@ -111,13 +143,12 @@ async function fetchAdMeta(cfg: TikTokConfig) {
   return meta;
 }
 
-// ── Reporting (daily metrics per ad) ────────────────────────────────────────
+// ── Reporting (daily metrics per ad) ─────────────────────────────────────────
 const REPORT_METRICS = [
   "spend",
   "impressions",
   "clicks",
   "conversion",
-  "total_complete_payment_rate", // not used directly; kept for parity
   "complete_payment_roas",
   "video_play_actions",
   "video_watched_2s",
@@ -147,7 +178,8 @@ const num = (v: string | undefined) => {
 };
 
 async function fetchReport(
-  cfg: TikTokConfig,
+  accessToken: string,
+  advertiserId: string,
   startDate: string,
   endDate: string,
 ): Promise<Map<string, DailyMetric[]>> {
@@ -155,8 +187,8 @@ async function fetchReport(
   let page = 1;
   let totalPage = 1;
   do {
-    const data = await ttGet<ReportData>(cfg, "/report/integrated/get/", {
-      advertiser_id: cfg.advertiserId,
+    const data = await ttGet<ReportData>(accessToken, "/report/integrated/get/", {
+      advertiser_id: advertiserId,
       report_type: "BASIC",
       data_level: "AUCTION_AD",
       dimensions: ["ad_id", "stat_time_day"],
@@ -202,27 +234,31 @@ async function fetchReport(
   return byAd;
 }
 
-/** Fetch ads + their daily metrics for [startDate, endDate] (inclusive). */
-export async function fetchTikTokAds(
-  cfg: TikTokConfig,
+/** Fetch ads + daily metrics for a single advertiser account. */
+async function fetchAdsForAdvertiser(
+  accessToken: string,
+  advertiserId: string,
+  advertiserName: string,
   startDate: string,
   endDate: string,
 ): Promise<TikTokAd[]> {
   const [meta, report] = await Promise.all([
-    fetchAdMeta(cfg),
-    fetchReport(cfg, startDate, endDate),
+    fetchAdMeta(accessToken, advertiserId),
+    fetchReport(accessToken, advertiserId, startDate, endDate),
   ]);
 
   const ads: TikTokAd[] = [];
   for (const [adId, base] of meta) {
-    ads.push({ ...base, daily: report.get(adId) ?? [] });
+    ads.push({ ...base, advertiserName, daily: report.get(adId) ?? [] });
   }
-  // Include ads that have report rows but no meta (rare).
+  // Ads with report rows but no meta (rare).
   for (const [adId, daily] of report) {
     if (!meta.has(adId)) {
       ads.push({
         id: adId,
         name: adId,
+        advertiserId,
+        advertiserName,
         campaignId: null,
         campaignName: null,
         adGroupId: null,
@@ -235,4 +271,27 @@ export async function fetchTikTokAds(
     }
   }
   return ads;
+}
+
+/** Fetch ads across every configured advertiser account for [startDate, endDate]. */
+export async function fetchTikTokAds(
+  cfg: TikTokConfig,
+  startDate: string,
+  endDate: string,
+): Promise<TikTokAd[]> {
+  const names = await fetchAdvertiserNames(cfg.accessToken, cfg.advertiserIds);
+
+  const perAccount = await Promise.all(
+    cfg.advertiserIds.map((advertiserId) =>
+      fetchAdsForAdvertiser(
+        cfg.accessToken,
+        advertiserId,
+        names.get(advertiserId) ?? labelForAdvertiser(advertiserId),
+        startDate,
+        endDate,
+      ),
+    ),
+  );
+
+  return perAccount.flat();
 }

@@ -14,6 +14,8 @@ datasource db {
 model Ad {
   id              String          @id // TikTok ad_id
   name            String
+  advertiserId    String? // TikTok advertiser (ad account) id
+  advertiserName  String? // friendly market label, e.g. "Maanesten DK"
   campaignId      String?
   campaignName    String?
   adGroupId       String?
@@ -24,6 +26,8 @@ model Ad {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   metrics         AdDailyMetric[]
+
+  @@index([advertiserId])
 }
 
 /// One row per ad per day. The dashboard aggregates these over a date range.

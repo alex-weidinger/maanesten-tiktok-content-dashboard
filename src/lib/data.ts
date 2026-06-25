@@ -44,6 +44,8 @@ export async function getDashboardData(range: DateRange): Promise<DashboardData>
   const mapped: AdRecord[] = ads.map((ad) => ({
     id: ad.id,
     name: ad.name,
+    advertiserId: ad.advertiserId,
+    advertiserName: ad.advertiserName,
     campaignName: ad.campaignName,
     adGroupName: ad.adGroupName,
     operationStatus: ad.operationStatus,

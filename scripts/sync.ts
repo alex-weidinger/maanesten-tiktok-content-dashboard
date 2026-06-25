@@ -1,5 +1,6 @@
 // Manual data sync: `npm run sync`. Pulls the rolling window from TikTok
 // (or mock data) into the database. Requires DATABASE_URL to be set.
+import "dotenv/config";
 import { runSync } from "../src/lib/sync";
 
 runSync()

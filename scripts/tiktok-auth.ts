@@ -8,6 +8,7 @@
 //   npm run tiktok:token -- XXXX
 //
 // Reads TIKTOK_APP_ID and TIKTOK_APP_SECRET from the environment (.env).
+import "dotenv/config";
 
 const appId = process.env.TIKTOK_APP_ID;
 const secret = process.env.TIKTOK_APP_SECRET;
