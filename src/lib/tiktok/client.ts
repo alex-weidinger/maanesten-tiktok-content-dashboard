@@ -97,7 +97,6 @@ interface AdListData {
     adgroup_name?: string;
     operation_status?: string;
     secondary_status?: string;
-    image_url?: string;
   }>;
   page_info: { page: number; total_page: number };
 }
@@ -118,7 +117,6 @@ async function fetchAdMeta(accessToken: string, advertiserId: string) {
         "adgroup_name",
         "operation_status",
         "secondary_status",
-        "image_url",
       ],
       page,
       page_size: 100,
@@ -134,7 +132,7 @@ async function fetchAdMeta(accessToken: string, advertiserId: string) {
         adGroupName: a.adgroup_name ?? null,
         operationStatus: a.operation_status ?? null,
         secondaryStatus: a.secondary_status ?? null,
-        thumbnailUrl: a.image_url ?? null,
+        thumbnailUrl: null,
       });
     }
     totalPage = data.page_info?.total_page ?? 1;

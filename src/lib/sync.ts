@@ -45,46 +45,49 @@ export async function runSync(window?: DateRange): Promise<SyncResult> {
       ads = getMockAds(range);
     }
 
-    let rowCount = 0;
-    for (const ad of ads) {
-      await prisma.ad.upsert({
-        where: { id: ad.id },
-        create: {
-          id: ad.id,
-          name: ad.name,
-          advertiserId: ad.advertiserId ?? null,
-          advertiserName: ad.advertiserName ?? null,
-          campaignId: ad.campaignId ?? null,
-          campaignName: ad.campaignName ?? null,
-          adGroupId: ad.adGroupId ?? null,
-          adGroupName: ad.adGroupName ?? null,
-          operationStatus: ad.operationStatus ?? null,
-          secondaryStatus: ad.secondaryStatus ?? null,
-          thumbnailUrl: ad.thumbnailUrl ?? null,
-        },
-        update: {
-          name: ad.name,
-          advertiserId: ad.advertiserId ?? null,
-          advertiserName: ad.advertiserName ?? null,
-          campaignId: ad.campaignId ?? null,
-          campaignName: ad.campaignName ?? null,
-          adGroupId: ad.adGroupId ?? null,
-          adGroupName: ad.adGroupName ?? null,
-          operationStatus: ad.operationStatus ?? null,
-          secondaryStatus: ad.secondaryStatus ?? null,
-          thumbnailUrl: ad.thumbnailUrl ?? null,
-        },
-      });
-
-      for (const d of ad.daily) {
-        await prisma.adDailyMetric.upsert({
-          where: { adId_date: { adId: ad.id, date: new Date(d.date) } },
-          create: { adId: ad.id, date: new Date(d.date), ...metricFields(d) },
-          update: metricFields(d),
-        });
-        rowCount++;
-      }
+    // 1. Upsert ad metadata (status, names, market) with light concurrency.
+    for (let i = 0; i < ads.length; i += 25) {
+      await Promise.all(
+        ads.slice(i, i + 25).map((ad) => {
+          const fields = {
+            name: ad.name,
+            advertiserId: ad.advertiserId ?? null,
+            advertiserName: ad.advertiserName ?? null,
+            campaignId: ad.campaignId ?? null,
+            campaignName: ad.campaignName ?? null,
+            adGroupId: ad.adGroupId ?? null,
+            adGroupName: ad.adGroupName ?? null,
+            operationStatus: ad.operationStatus ?? null,
+            secondaryStatus: ad.secondaryStatus ?? null,
+            thumbnailUrl: ad.thumbnailUrl ?? null,
+          };
+          return prisma.ad.upsert({
+            where: { id: ad.id },
+            create: { id: ad.id, ...fields },
+            update: fields,
+          });
+        }),
+      );
     }
+
+    // 2. Bulk-replace this window's daily metrics (delete then createMany) —
+    //    far faster than per-row upserts at thousands of ads.
+    const adIds = ads.map((a) => a.id);
+    const start = new Date(range.start);
+    const end = new Date(range.end);
+    for (let i = 0; i < adIds.length; i += 500) {
+      await prisma.adDailyMetric.deleteMany({
+        where: { adId: { in: adIds.slice(i, i + 500) }, date: { gte: start, lte: end } },
+      });
+    }
+
+    const rows = ads.flatMap((ad) =>
+      ad.daily.map((d) => ({ adId: ad.id, date: new Date(d.date), ...metricFields(d) })),
+    );
+    for (let i = 0; i < rows.length; i += 1000) {
+      await prisma.adDailyMetric.createMany({ data: rows.slice(i, i + 1000) });
+    }
+    const rowCount = rows.length;
 
     await prisma.syncLog.create({
       data: { status: "ok", source, adCount: ads.length, rowCount },

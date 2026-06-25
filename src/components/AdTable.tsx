@@ -49,6 +49,8 @@ const FILTERS: { key: AdStatus | "all"; label: string }[] = [
   { key: "disabled", label: "Disabled" },
 ];
 
+const ROW_LIMIT = 100;
+
 export function AdTable({ rows }: { rows: AdRow[] }) {
   const [sort, setSort] = useState<SortKey>("spend");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
@@ -81,6 +83,8 @@ export function AdTable({ rows }: { rows: AdRow[] }) {
     });
     return sorted;
   }, [rows, filter, sort, dir]);
+
+  const shown = visible.slice(0, ROW_LIMIT);
 
   function toggleSort(key: SortKey) {
     if (key === sort) {
@@ -150,7 +154,7 @@ export function AdTable({ rows }: { rows: AdRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {visible.map((r) => (
+            {shown.map((r) => (
               <tr
                 key={r.id}
                 className={clsx(
@@ -192,6 +196,13 @@ export function AdTable({ rows }: { rows: AdRow[] }) {
           </tbody>
         </table>
       </div>
+
+      {visible.length > ROW_LIMIT && (
+        <div className="border-t border-border px-4 py-2.5 text-xs text-muted">
+          Showing top {ROW_LIMIT} of {visible.length.toLocaleString()} ads (sorted by{" "}
+          {sort}). Use the market and status filters to narrow the list.
+        </div>
+      )}
     </div>
   );
 }
